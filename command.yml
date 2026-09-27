@@ -1,0 +1,77 @@
+- name: Linux Patching Test
+  hosts: devservers
+  become: yes
+
+  tasks:
+
+    - name: Get hostname
+      command: hostname
+      register: hostname_output
+
+    - name: Get RepoList
+      command: yum repolist
+      register: repolist_output
+
+    - name: Check for Updates
+      shell: yum check-update || true
+      register: check_output
+
+    - name: Update Packages
+      command: yum update -y
+      register: update_output
+
+    - name: Get Last Transaction
+      shell: yum history info last
+      register: history_output
+      failed_when: false
+
+    - name: Create reports directory on jump server
+      delegate_to: localhost
+      become: false
+      run_once: true
+      file:
+        path: "{{ lookup('env', 'HOME') }}/ansible/reports"
+        state: directory
+        mode: '0755'
+
+    - name: Create Patch Report on jump server
+      delegate_to: localhost
+      become: false
+      copy:
+        dest: "{{ lookup('env', 'HOME') }}/ansible/reports/{{ hostname_output.stdout }}_patch_report_{{ lookup('pipe', 'date +%Y%m%d') }}.txt"
+        content: |
+          ======================================================
+          PATCH REPORT
+          ======================================================
+
+          Hostname: {{ hostname_output.stdout }}
+
+          ======================================================
+          REPOSITORIES
+          ======================================================
+
+          {{ repolist_output.stdout }}
+
+          ======================================================
+          AVAILABLE UPDATES BEFORE PATCHING
+          ======================================================
+
+          {{ check_output.stdout }}
+
+          ======================================================
+          PATCH EXECUTION OUTPUT
+          ======================================================
+
+          {{ update_output.stdout }}
+
+          ======================================================
+          LAST YUM/DNF TRANSACTION
+          ======================================================
+
+          {{ history_output.stdout }}
+
+    - name: Display Results
+      debug:
+        msg:
+          - "Hostname: {{ hostname_output.stdout }}"
+          - "Report Created: /ansible/reports/{{ hostname_output.stdout }}_patch_report_{{ lookup('pipe', 'date +%Y%m%d') }}.txt"
