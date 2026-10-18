@@ -1,5 +1,5 @@
 - name: Linux Patching Test
-  hosts: devservers
+  hosts: all
   become: yes
 
   tasks:
@@ -25,20 +25,32 @@
       register: history_output
       failed_when: false
 
+    - name: Reboot the server after patching
+      reboot:
+        msg: "Rebooting server after patching via Ansible"
+        reboot_timeout: 600      # Wait up to 10 minutes for the server to come back
+        post_reboot_delay: 30    # Wait 30 seconds after it comes back before continuing
+
+    - name: Check server uptime
+      command: uptime
+      register: uptime_output
+
     - name: Create reports directory on jump server
       delegate_to: localhost
-      become: false
       run_once: true
+      vars:
+        ansible_become: false
       file:
-        path: "{{ lookup('env', 'HOME') }}/ansible/reports"
+        path: "/home/azureuser/ansible/reports"
         state: directory
         mode: '0755'
 
     - name: Create Patch Report on jump server
       delegate_to: localhost
-      become: false
+      vars:
+        ansible_become: false
       copy:
-        dest: "{{ lookup('env', 'HOME') }}/ansible/reports/{{ hostname_output.stdout }}_patch_report_{{ lookup('pipe', 'date +%Y%m%d') }}.txt"
+        dest: "/home/azureuser/ansible/reports/{{ hostname_output.stdout }}_patch_report_{{ lookup('pipe', 'date +%Y%m%d') }}.txt"
         content: |
           ======================================================
           PATCH REPORT
@@ -69,6 +81,13 @@
           ======================================================
 
           {{ history_output.stdout }}
+
+          ======================================================
+          SYSTEM UPTIME (POST-REBOOT)
+          ======================================================
+
+          {{ uptime_output.stdout }}
+
 
     - name: Display Results
       debug:
