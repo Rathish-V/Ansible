@@ -6,7 +6,8 @@ app = Flask(__name__)
 app.secret_key = "secure_patching_key_2026"
 
 VALID_USERS = {
-    "admin": "admin123"
+    "admin": "admin123",
+    "teammate1": "patching2026"
 }
 
 LOGIN_HTML = """
@@ -45,27 +46,51 @@ DASHBOARD_HTML = """
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 0; background-color: #f4f4f9; }
         .header { display: flex; justify-content: space-between; padding: 15px 50px; background: #333; color: white; align-items: center; }
-        .content { margin-top: 40px; }
-        .mode-selector { margin-bottom: 30px; font-size: 18px; font-weight: bold; }
-        .mode-selector label { margin: 0 15px; cursor: pointer; }
-        .form-section { margin-bottom: 25px; padding: 20px; background: white; display: inline-block; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        select { padding: 10px; font-size: 16px; margin: 0 10px; border-radius: 4px; }
-        label.dropdown-label { font-size: 16px; font-weight: bold; }
-        .run-btn { padding: 15px 30px; font-size: 18px; background-color: #0078D4; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 10px; font-weight: bold; }
+        .content { margin-top: 50px; }
+        .form-group { margin-bottom: 25px; }
+        select { padding: 12px; font-size: 16px; margin: 0 15px; border-radius: 4px; min-width: 200px; }
+        label { font-size: 18px; font-weight: bold; }
+        .run-btn { padding: 15px 30px; font-size: 18px; background-color: #0078D4; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
         .run-btn:hover { background-color: #005A9E; }
         a.logout { color: #ff4d4d; text-decoration: none; font-weight: bold; }
     </style>
     <script>
-        function toggleMode() {
-            var mode = document.querySelector('input[name="patch_mode"]:checked').value;
-            if (mode === 'environment') {
-                document.getElementById('env_section').style.display = 'block';
-                document.getElementById('site_section').style.display = 'none';
-            } else {
-                document.getElementById('env_section').style.display = 'none';
-                document.getElementById('site_section').style.display = 'block';
-            }
+        // Define which environments belong to which sites
+        const siteConfig = {
+            'Uppsala': ['DEV', 'QUAL', 'PROD'],
+            'CABDU': ['QUAL', 'PROD'],
+            'ALBY': ['QUAL', 'PROD'],
+            'AMS': ['DEV', 'QUAL', 'PROD'],
+            'EUR': ['DEV', 'QUAL', 'PROD']
+        };
+
+        function updateDropdown() {
+            const siteSelect = document.getElementById('site');
+            const groupSelect = document.getElementById('server_group');
+            const selectedSite = siteSelect.value;
+            const availableEnvs = siteConfig[selectedSite];
+            
+            // Clear out the old options
+            groupSelect.innerHTML = '';
+            
+            // Generate new options based on the site configuration
+            availableEnvs.forEach(env => {
+                // Add APP Servers
+                let optApp = document.createElement('option');
+                optApp.value = env + '_APP_Servers';
+                optApp.text = env + ' App Servers';
+                groupSelect.appendChild(optApp);
+                
+                // Add DB Servers
+                let optDb = document.createElement('option');
+                optDb.value = env + '_DB_Servers';
+                optDb.text = env + ' DB Servers';
+                groupSelect.appendChild(optDb);
+            });
         }
+        
+        // Run this once when the page loads to set the initial state
+        window.onload = updateDropdown;
     </script>
 </head>
 <body>
@@ -77,37 +102,25 @@ DASHBOARD_HTML = """
         <h1>Server Patching Automation</h1>
         
         <form action="/run" method="post">
-            <div class="mode-selector">
-                <label><input type="radio" name="patch_mode" value="environment" checked onchange="toggleMode()"> Patch by Environment</label>
-                <label><input type="radio" name="patch_mode" value="site" onchange="toggleMode()"> Patch by Site</label>
-            </div>
-
-            <div id="env_section" class="form-section">
-                <label class="dropdown-label" for="environment">Select Environment:</label>
-                <select name="environment" id="environment">
-                    <option value="DEV">DEV</option>
-                    <option value="QUAL">QUAL</option>
-                    <option value="PROD">PROD</option>
-                    <option value="all">ALL Environments</option>
-                </select>
-            </div>
-
-            <div id="site_section" class="form-section" style="display:none;">
-                <label class="dropdown-label" for="site">Select Site:</label>
-                <select name="site" id="site">
+            <div class="form-group">
+                <label for="site">1. Select Site:</label>
+                <!-- Added onchange to trigger the JavaScript function -->
+                <select name="site" id="site" onchange="updateDropdown()">
                     <option value="Uppsala">Uppsala</option>
-                    <option value="Canada">Canada</option>
-                </select>
-                
-                <label class="dropdown-label" for="server_type" style="margin-left: 20px;">Server Type:</label>
-                <select name="server_type" id="server_type">
-                    <option value="APP_Servers">Application Servers</option>
-                    <option value="DB_Servers">Database Servers</option>
-                    <option value="ALL">All Servers in Site</option>
+                    <option value="CABDU">CABDU</option>
+                    <option value="ALBY">ALBY</option>
+                    <option value="AMS">AMS</option>
+                    <option value="EUR">EUR</option>
                 </select>
             </div>
             
-            <br>
+            <div class="form-group">
+                <label for="server_group">2. Select Environment & Server Type:</label>
+                <select name="server_group" id="server_group">
+                    <!-- Options are now injected automatically by JavaScript -->
+                </select>
+            </div>
+            
             <button type="submit" class="run-btn">Run Linux Patching</button>
         </form>
     </div>
@@ -183,18 +196,10 @@ def run_playbook():
     if 'username' not in session:
         return redirect(url_for('login'))
         
-    patch_mode = request.form.get('patch_mode')
+    site = request.form.get('site')
+    server_group = request.form.get('server_group')
     
-    # Determine the target based on which radio button was selected
-    if patch_mode == 'environment':
-        target = request.form.get('environment')
-    else:
-        site = request.form.get('site')
-        server_type = request.form.get('server_type')
-        if server_type == 'ALL':
-            target = site  # Targets the parent group (e.g., Canada)
-        else:
-            target = f"{site}_{server_type}"  # Targets the specific group (e.g., Canada_APP_Servers)
+    target = f"{site}_{server_group}"
         
     return render_template_string(STREAM_HTML, target=target)
 
@@ -208,32 +213,30 @@ def stream(target):
         env = os.environ.copy()
         env["ANSIBLE_FORCE_COLOR"] = "0"
         env["PYTHONUNBUFFERED"] = "1"
-
-        # NEW: Prevent hanging on SSH prompts and offline servers
         env["ANSIBLE_HOST_KEY_CHECKING"] = "False"
         env["ANSIBLE_TIMEOUT"] = "10"
-
+        
         try:
             process = subprocess.Popen(
-                cmd,
-                cwd="/home/azureuser/ansible",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                cmd, 
+                cwd="/home/azureuser/ansible", 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT, 
                 text=True,
                 bufsize=1,
                 env=env
             )
-
+            
             for line in iter(process.stdout.readline, ''):
                 if line:
-                    # Single backslashes here are required for the browser to render the text
                     yield f"data: {line.rstrip()}\n\n"
-
+                
             process.stdout.close()
             process.wait()
         except Exception as e:
             yield f"data: ERROR: {str(e)}\n\n"
 
     return Response(generate(), mimetype='text/event-stream')
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)
